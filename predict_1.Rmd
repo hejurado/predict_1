@@ -1,0 +1,186 @@
+---
+title: "Practical Machine Learning Final Report: Exercise Prediction"
+author: "Hector H Jurado"
+date: "26/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introdution
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+
+  Class A: exactly according to the specification (proper execution)
+
+  Class B: throwing the elbows to the front (common mistake)
+
+  Class C: lifting the dumbbell only halfway (common mistake)
+
+  Class D: lowering the dumbbell only halfway (common mistake)
+
+  Class F: Throwing the hips to the front (common mistake)
+
+
+## Goal of this Project:
+
+The goal of this project is to predict the manner in which the exercise was performed (i.e., Class A, B, C, D, or F). 
+
+
+## Load library 
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(e1071)
+library(randomForest)
+set.seed(1)
+```
+
+
+## Download the data
+
+```{r}
+train.url <-
+        "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test.url <- 
+        "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+path <- paste(getwd(),"/", "machine", sep="")
+train.file <- file.path(path, "machine-train-data.csv")
+test.file <- file.path(path, "machine-test-data.csv")
+```
+
+```{r}
+if (!file.exists(train.file)) {
+        download.file(train.url, destfile=train.file)
+}
+if (!file.exists(test.file)) {
+        download.file(test.url, destfile=test.file)
+}
+
+train.data.raw <- read.csv(train.file, na.strings=c("NA","#DIV/0!",""))
+test.data.raw <- read.csv(test.file, na.strings=c("NA","#DIV/0!",""))
+```
+
+## Processing Data
+
+```{r}
+ #Drop the first 7 columns as they're unnecessary for predicting.
+train.data.clean1 <- train.data.raw[,8:length(colnames(train.data.raw))]
+test.data.clean1 <- test.data.raw[,8:length(colnames(test.data.raw))]
+
+# Drop colums with NAs
+train.data.clean1 <- train.data.clean1[, colSums(is.na(train.data.clean1)) == 0] 
+test.data.clean1 <- test.data.clean1[, colSums(is.na(test.data.clean1)) == 0] 
+
+# Check for near zero variance predictors and drop them if necessary
+nzv <- nearZeroVar(train.data.clean1,saveMetrics=TRUE)
+zero.var.ind <- sum(nzv$nzv)
+
+if ((zero.var.ind>0)) {
+        train.data.clean1 <- train.data.clean1[,nzv$nzv==FALSE]
+}
+```
+
+## Get the training and test 
+
+
+```{r}
+trainingRaw <- read.csv("./data/pml-training.csv")
+testRaw <- read.csv("./data/pml-testing.csv")
+dim(trainingRaw)
+dim(testRaw)
+str(trainingRaw)
+```
+We note that the training dataset contains 19622 observations and 160 variables, and the test dataset contains 20 observations and 160 variables. The variable "classe" in the training set is the result to predict.
+
+```{r}
+trainingRaw$classe <- as.factor(trainingRaw$classe) 
+#get cant o register for classe
+summary (trainingRaw$classe)
+```
+
+
+
+
+
+```{r}
+#NAindex <- apply(trainingRaw,2,function(x) {sum(is.na(x))}) 
+#trainingRaw <- trainingRaw[,which(NAindex == 0)]
+#NAindex <- apply(testRaw,2,function(x) {sum(is.na(x))}) 
+#testingRaw <- testRaw[,which(NAindex == 0)]
+
+#str(trainingRaw)
+#str(testingRaw)
+
+```
+## preprocessing the variables
+
+```{r}
+v <- which(lapply(trainingRaw, class) %in% "numeric")
+preObj <-preProcess(trainingRaw[,v],method=c('knnImpute', 'center', 'scale'))
+trainLess1 <- predict(preObj, trainingRaw[,v])
+trainLess1$classe <- trainingRaw$classe
+testLess1 <-predict(preObj,testRaw[,v])
+```
+
+## Cross validations
+
+Split the data into set for training and one set for cross validation.  
+
+```{r}
+set.seed(12031987)
+
+inTrain = createDataPartition(trainLess1$classe, p = 3/4, list=FALSE)
+training = trainLess1[inTrain,]
+crossValidation = trainLess1[-inTrain,]
+```
+
+## Model
+
+Create the Train model using RF( random Forest)
+
+```{r}
+modFit <- train(classe ~., method="rf", data=training, trControl=trainControl(method='cv'), number=5, allowParallel=TRUE )
+```
+
+## Save the model 
+
+```{r}
+save(modFit,file="fit.R")
+```
+
+
+
+
+## Accuracy 
+
+Check out  the acurracy  of the training set and cross-validation set
+
+```{r}
+trainingPred <- predict(modFit, training)
+confusionMatrix(trainingPred, training$classe)
+```
+
+## Cross Validation Set
+
+```{r}
+cvPred <- predict(modFit, crossValidation)
+confusionMatrix(cvPred, crossValidation$classe)
+```
+
+## results 
+
+We get the predictions in the actual test set
+
+```{r}
+testingPred <- predict(modFit, testLess1)
+testingPred
+```
+
